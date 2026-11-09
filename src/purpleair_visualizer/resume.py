@@ -33,6 +33,8 @@ class PreviousDownload:
         time_column: Column holding the timestamps.
         first_time: Earliest timestamp, UTC.
         last_time: Latest timestamp, UTC.
+        next_time: When the next reading after the file is due, UTC. The
+            same as ``last_time`` if the spacing cannot be found.
         sensor_index: Sensor index from the file name or a column, if found.
         average: Matching key of ``AVERAGES``, if the spacing matches one.
         fields: Data columns, in file order.
@@ -44,6 +46,7 @@ class PreviousDownload:
     time_column: str
     first_time: pd.Timestamp
     last_time: pd.Timestamp
+    next_time: pd.Timestamp
     sensor_index: int | None
     average: str | None
     fields: tuple[str, ...]
@@ -62,12 +65,19 @@ def _sensor_index(path: Path, df: pd.DataFrame) -> int | None:
     return None
 
 
-def _average(times: pd.Series) -> str | None:
-    """Match the most common spacing to a PurpleAir average."""
+def _interval(times: pd.Series) -> pd.Timedelta | None:
+    """Find the most common spacing, or None if there is too little data."""
     try:
-        minutes = infer_interval(times) / pd.Timedelta(minutes=1)
+        return infer_interval(times)
     except ValueError:
         return None
+
+
+def _average(interval: pd.Timedelta | None) -> str | None:
+    """Match a spacing to a PurpleAir average."""
+    if interval is None:
+        return None
+    minutes = interval / pd.Timedelta(minutes=1)
     for name, average in AVERAGES.items():
         if average.minutes and average.minutes == minutes:
             return name
@@ -116,14 +126,17 @@ def read_previous_download(path: str | Path) -> PreviousDownload:
     if times.empty:
         raise ValueError(f"{path.name} contains no readable times.")
     fields = tuple(str(column) for column in df.columns if column not in (time_column, SENSOR_COLUMN))
+    interval = _interval(times)
+    last_time = times.max()
     return PreviousDownload(
         path=path,
         data=df,
         time_column=time_column,
         first_time=times.min(),
-        last_time=times.max(),
+        last_time=last_time,
+        next_time=last_time if interval is None else last_time + interval,
         sensor_index=_sensor_index(path, df),
-        average=_average(times),
+        average=_average(interval),
         fields=fields,
         zone=_zone(df[time_column]),
     )

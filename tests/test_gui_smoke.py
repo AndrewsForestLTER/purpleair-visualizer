@@ -125,7 +125,7 @@ def test_continue_from_previous_download(app: gui.App, tmp_path: Path, monkeypat
     assert app.download.average_var.get() == "1 hour"
     assert app.time_zone_var.get() == "UTC"  # matches the previous file
     assert "Time zone set to UTC" in app.download.message.cget("text")
-    assert app.download.start_var.get() == "2025-01-01"  # the day of the last reading
+    assert app.download.start_var.get() == "2025-01-02"  # the next reading is due at midnight
     assert [field for field, var in app.download.field_vars.items() if var.get()] == ["humidity", "temperature", "pm2.5_atm"]
 
     app.download.key_var.set("secret")
@@ -142,6 +142,26 @@ def test_continue_from_previous_download(app: gui.App, tmp_path: Path, monkeypat
     ]
     assert saved["temperature"].tolist() == [9.5, 9.0, 8.0]
     assert previous.read_text().count("\n") == 3  # the previous file is left alone
+
+
+def test_file_ending_mid_day_restarts_that_day(app: gui.App, tmp_path: Path) -> None:
+    previous = tmp_path / "115739 part day.csv"
+    previous.write_text("time_stamp,humidity\n2025-01-01T13:00:00Z,60\n2025-01-01T14:00:00Z,61\n")
+    app.download.use_previous(previous)
+    assert app.download.start_var.get() == "2025-01-01"
+
+
+def test_changed_fields_ask_before_combining(app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    previous = tmp_path / "115739 old.csv"
+    previous.write_text("time_stamp,humidity\n2025-01-01T00:00:00Z,60\n2025-01-01T01:00:00Z,61\n")
+    asked = []
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda title, message: asked.append(message) or False)
+    monkeypatch.setattr(gui, "download_history", lambda *args, **kwargs: pytest.fail("should not download"))
+    app.download.use_previous(previous)
+    app.download.field_vars["pressure"].set(True)
+    fill_form(app, tmp_path)
+    app.download.start()
+    assert "earlier rows for pressure" in asked[0]
 
 
 def test_previous_download_for_another_sensor_is_refused(

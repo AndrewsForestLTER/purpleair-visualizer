@@ -317,8 +317,9 @@ class DownloadTab(ttk.Frame):
     def use_previous(self, path: Path) -> None:
         """Match the form to an earlier download and start where it ends.
 
-        The start date is the day of the last reading, so the new download
-        overlaps the old one and no readings fall between them.
+        The start date is the day the next reading after the file is due.
+        Downloads begin at midnight, so a file that ends partway through a
+        day is overlapped rather than leaving a gap.
         """
         try:
             previous = read_previous_download(path)
@@ -338,7 +339,7 @@ class DownloadTab(ttk.Frame):
             var.set(field in known)
         self.extra_var.set(", ".join(field for field in previous.fields if field not in self.field_vars))
         zone = self.app.time_zone
-        self.start_var.set(f"{previous.last_time.tz_convert(zone):%Y-%m-%d}")
+        self.start_var.set(f"{previous.next_time.tz_convert(zone):%Y-%m-%d}")
         self.end_var.set(f"{pd.Timestamp.now(tz=zone):%Y-%m-%d}")
 
         self.previous_label.config(text=path.name, foreground="")
@@ -354,7 +355,7 @@ class DownloadTab(ttk.Frame):
             note += f" Time zone set to {zone_name(self.app.time_zone)} to match the previous file."
         self.message.config(
             text=f"{path.name} ends {previous.last_time.tz_convert(zone):%Y-%m-%d %H:%M} {zone_name(zone)}. "
-            f"The start date overlaps it so the record has no gap. "
+            f"The start date picks up from there so the record has no gap. "
             f"Check the temperature setting matches the previous file.{note}"
         )
 
@@ -521,7 +522,23 @@ class DownloadTab(ttk.Frame):
                     "Clear the previous download or change the sensor index.",
                 )
                 return
-            if job.start > previous.last_time and not messagebox.askyesno(
+            added = [field for field in job.fields if field not in previous.fields]
+            dropped = [field for field in previous.fields if field not in job.fields]
+            if (added or dropped) and not messagebox.askyesno(
+                "Fields differ from the previous file",
+                "The combined file will have blanks in "
+                + "; ".join(
+                    text
+                    for text in (
+                        f"the earlier rows for {', '.join(added)}" if added else "",
+                        f"the new rows for {', '.join(dropped)}" if dropped else "",
+                    )
+                    if text
+                )
+                + ". Continue?",
+            ):
+                return
+            if job.start > previous.next_time and not messagebox.askyesno(
                 "Gap in the record",
                 f"The previous file ends {previous.last_time.tz_convert(self.app.time_zone):%Y-%m-%d %H:%M}, "
                 "before the start date, so the combined file will have a gap. Continue?",

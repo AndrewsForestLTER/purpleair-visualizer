@@ -28,6 +28,7 @@ def test_reads_purpleair_export(tmp_path: Path) -> None:
     assert previous.zone == "UTC"
     assert previous.fields == ("humidity", "temperature", "pressure", "pm2.5_cf_1")
     assert previous.last_time == pd.Timestamp("2025-09-29 23:00", tz="UTC")
+    assert previous.next_time == pd.Timestamp("2025-09-30 00:00", tz="UTC")
 
 
 def test_reads_app_download_in_pst(tmp_path: Path) -> None:

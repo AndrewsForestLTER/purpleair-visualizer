@@ -6,7 +6,7 @@
 
 - Time zone choice at the top of the window, PST (UTC-8, no daylight saving) by default or UTC, used for download dates, plots, gap filling and saved files.
 - Downloads convert temperature to Celsius with one decimal by default.
-- **Continue from...** in the Download tab matches the form to an earlier download, starts on the day of its last reading, and can combine both into one file without repeated times.
+- **Continue from...** in the Download tab matches the form to an earlier download, starts where it ends, and can combine both into one file without repeated times.
 
 ### Changed
 
