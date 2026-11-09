@@ -1,0 +1,69 @@
+sensor:
+  name: Classic PurpleAir dual laser particulate sensor
+  dimensions: "3.5 in x 3.5 in x 5 in (85 mm x 85 mm x 125 mm)"
+  color: White
+  power_requirements: "5V USB Micro, 0.18A continuous, 600mA peak"
+  intended_use: "Outdoor and indoor use"
+  wifi: true
+  expansion_port: false
+  internal_storage: false
+  warranty: "One (1) year limited warranty"
+  laser_particle_counters:
+    class: "Class 1"
+    description: "A Class 1 laser is safe under all conditions of normal use."
+  manufacturer: Plantower
+  redundancy: "This device contains two particle detectors to provide redundancy and help determine sensor health."
+  type: "PMS-5003 (2)"
+  measurement_range_um: [0.3, 0.5, 1.0, 2.5, 5.0, 10]
+  counting_efficiency:
+    at_0_3um: "50%"
+    at_0_5um_or_greater: "98%"
+  effective_range_pm25_standard: "0 to 500 μg/m³"
+  maximum_range_pm25_standard: "≥1000 μg/m³"
+  maximum_consistency_error_pm25_standard:
+    at_100_to_500: "±10%"
+    at_0_to_100: "±10μg/m³"
+  standard_volume: "0.1 liter"
+  single_response_time: "≤1 second"
+  total_response_time: "≤10 seconds"
+
+environmental_sensor:
+  manufacturer: BOSCH
+  model: BME280
+  temperature_range: "-40°F to 185°F (-40°C to 85°C)"
+  pressure_range: "300 to 1100 hPa"
+  humidity:
+    response_time: "1s (τ63%)"
+    accuracy_tolerance: "±3% RH"
+    hysteresis: "≤2% RH"
+
+wireless:
+  transmitter_module_fcc_id: "2AC7Z-ESPWROOM02D"
+  networks: "802.11b/g/n @ 2.4GHz"
+  security: "WPA2 pre-shared key or open networks"
+  certificates: [FCC, CE, TELEC, SRRC]
+  tx_power:
+    b: "+20 dBm"
+    g: "+17 dBm"
+    n: "+14 dBm"
+  rx_sensitivity:
+    b: "-91 dBm (11 Mbps)"
+    g: "-75 dBm (54 Mbps)"
+    n: "-72 dBm (MCS7)"
+  antenna_type: "2 dBi on-board PCB antenna"
+
+compliance:
+  fcc_statement_part_15_19: |
+    This device complies with Part 15 of the FCC Rules. Operation is subject to the following two conditions:
+      1. This device may not cause harmful interference, and
+      2. This device must accept any interference received, including interference that may cause undesired operation.
+  warning_part_15_21: |
+    Changes or modifications not expressly approved by the party responsible for compliance could void the user’s authority to operate the equipment.
+  fcc_interference_statement_part_15_105_b: |
+    This equipment has been tested and found to comply with the limits for a Class B digital device, pursuant to Part 15 of the FCC Rules. These limits are designed to provide reasonable protection against harmful interference in a residential installation. This equipment generates, uses, and can radiate radio frequency energy and, if not installed and used in accordance with the instructions, may cause harmful interference to radio communications. However, there is no guarantee that interference will not occur in a particular installation. If this equipment does cause harmful interference to radio or television reception, which can be determined by turning the equipment off and on, the user is encouraged to try to correct the interference by one of the following measures:
+      - Reorient or relocate the receiving antenna.
+      - Increase the separation between the equipment and receiver.
+      - Connect the equipment into an outlet on a circuit different from that to which the receiver is connected.
+      - Consult the dealer or an experienced radio/TV technician for help.
+  rf_exposure: |
+    To comply with FCC/IC RF exposure limits for general population / uncontrolled exposure, the antenna(s) used for this transmitter must be installed to provide a separation distance of at least 20 cm from all persons and must not be co-located or operating in conjunction with any other antenna or transmitter.

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "purpleair-visualizer"
+dynamic = ["version"]
+description = "Desktop tool for exploring, gap-filling and plotting PurpleAir sensor CSV exports, with EPA AQI conversion"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Adam Kennedy", email = "adam.kennedy@oregonstate.edu" },
+    { name = "Mark Schulze" },
+]
+keywords = ["purpleair", "air quality", "AQI", "PM2.5", "time series"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "matplotlib>=3.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+build = ["pyinstaller>=6"]
+
+[project.scripts]
+purpleair-visualizer = "purpleair_visualizer.gui:main"
+purpleair-bounds = "purpleair_visualizer.cli:bounds_main"
+
+[tool.setuptools.dynamic]
+version = { attr = "purpleair_visualizer.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["purpleair_visualizer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

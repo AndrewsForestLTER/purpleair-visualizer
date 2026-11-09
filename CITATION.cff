@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "PurpleAir Visualizer"
+abstract: "Desktop tool for exploring, gap-filling and plotting PurpleAir sensor CSV exports, with EPA AQI conversion."
+authors:
+  - family-names: "Kennedy"
+    given-names: "Adam"
+    orcid: "https://orcid.org/0000-0002-0491-8412"
+    affiliation: "College of Forestry, Oregon State University"
+  - family-names: "Schulze"
+    given-names: "Mark"
+    orcid: "https://orcid.org/0000-0003-0438-4091"
+    affiliation: "Oregon State University"
+version: 2.0.0
+doi: 10.5281/zenodo.15367109
+date-released: 2026-11-09
+license: CC0-1.0
+repository-code: "https://github.com/AndrewsForestLTER/purpleair-visualizer"
+keywords:
+  - purpleair
+  - air quality
+  - AQI
+  - PM2.5
