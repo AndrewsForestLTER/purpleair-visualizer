@@ -1,8 +1,10 @@
 """Run the real app against the example file. Skipped where no display exists."""
 
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 tk = pytest.importorskip("tkinter")
@@ -33,6 +35,69 @@ def app(tk_root: tk.Tk, monkeypatch: pytest.MonkeyPatch) -> Iterator[gui.App]:
     application.load_path(EXAMPLE)
     yield application
     window.destroy()
+
+
+def pump(app: gui.App) -> None:
+    """Run the event loop until the Download tab's background work ends."""
+    deadline = time.monotonic() + 10
+    while app.download.running and time.monotonic() < deadline:
+        app.root.update()
+        time.sleep(0.01)
+    assert not app.download.running
+
+
+def fill_form(app: gui.App, folder: Path) -> None:
+    app.download.key_var.set("secret")
+    app.download.sensor_var.set("115739")
+    app.download.start_var.set("2025-01-01")
+    app.download.end_var.set("2025-01-02")
+    app.download.folder_var.set(str(folder))
+
+
+def test_download_saves_and_opens(app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gui, "save_settings", lambda settings: None)
+    seen = []
+
+    def fake(job: object, progress: object, cancel: object) -> pd.DataFrame:
+        seen.append(job)
+        return pd.DataFrame({"time_stamp": ["2025-01-01 00:00:00+00:00"], "pm2.5_cf_1": [1.5]})
+
+    monkeypatch.setattr(gui, "download_history", fake)
+    fill_form(app, tmp_path)
+    app.download.start()
+    pump(app)
+    assert seen[0].end == pd.Timestamp("2025-01-03", tz="UTC")  # the end date is included
+    assert list(tmp_path.glob("115739 2025-01-01 2025-01-02 1 hour.csv"))
+    assert app.source_name.startswith("115739")
+    assert app.plot.pm_var.get() == "pm2.5_cf_1"
+
+
+def test_key_is_saved_only_when_asked(app: gui.App, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    saved: list[dict] = []
+    monkeypatch.setattr(gui, "save_settings", saved.append)
+    fill_form(app, tmp_path)
+    app.download.remember_var.set(False)
+    app.download._save_choices()
+    app.download.remember_var.set(True)
+    app.download._save_choices()
+    assert "api_key" not in saved[0]
+    assert saved[1]["api_key"] == "secret"
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "message"),
+    [("key_var", "", "API read key"), ("sensor_var", "abc", "whole number"), ("start_var", "soon", "YYYY-MM-DD")],
+)
+def test_bad_form_is_rejected(
+    app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str, value: str, message: str
+) -> None:
+    errors: list[str] = []
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda title, text: errors.append(text))
+    fill_form(app, tmp_path)
+    getattr(app.download, variable).set(value)
+    app.download.start()
+    assert not app.download.running
+    assert message in errors[0]
 
 
 def legend_labels(app: gui.App) -> list[str]:

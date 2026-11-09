@@ -19,14 +19,14 @@ Download [`sample_purpleair.csv`](https://raw.githubusercontent.com/AndrewsFores
 
 ## 3. Get data from your own sensor
 
-PurpleAir provides historical data through its Data Download Tool, which uses the PurpleAir API. The older CSV download from the map has been discontinued.
+The app downloads directly from the PurpleAir API. Your sensor's readings are stored by PurpleAir, so the sensor doesn't need to be nearby.
 
-1. Create a PurpleAir Develop account and an API read key.
-2. Install the Data Download Tool and paste in your key.
-3. Enter your sensor's index number and choose dates, an averaging period and fields. Include `humidity`, `temperature` and `pm2.5_cf_1` to match the sample.
-4. Download the CSV and open it in this app.
+1. Create an account and an API read key at [PurpleAir Develop](https://develop.purpleair.com/).
+2. In the app's **Download** tab, paste in your key and click **Test Key**. Tick **Remember key** if you don't want to enter it each time.
+3. Enter your sensor's index number and choose dates (in UTC), an averaging period and fields. The usual fields are ticked for you.
+4. Click **Download and Open**. The app saves a CSV to the folder shown and opens it, ready to plot.
 
-Requests use API points, and private sensors also need their own read key. PurpleAir's [step-by-step guide](https://community.purpleair.com/t/how-to-get-historical-sensor-data-step-by-step-using-the-data-download-tool/11934) has current details.
+Downloads use API points from your PurpleAir account, and the app asks first before a very large download. Private sensors also need their own read key. See PurpleAir's [API overview](https://community.purpleair.com/t/about-the-purpleair-api/7145) for details on points. CSV files from PurpleAir's own Data Download Tool also work: use **Open CSV...**.
 
 ## 4. Clean up the data (optional)
 
@@ -51,6 +51,8 @@ See [How AQI is calculated](../README.md#how-aqi-is-calculated) for details.
 
 | Problem | What to do |
 |---------|------------|
+| "PurpleAir rejected the API key" | Copy the read key again from PurpleAir Develop. A write key won't work. |
+| "PurpleAir has no data" | Check the sensor index, and that the sensor was reporting on those dates. |
 | "Cannot read time column" | Choose the correct **Time column** in the Plot tab. |
 | AQI option has no effect | Choose a column in **PM2.5 column**. It is blank if no column name looks like PM2.5. |
 | "duplicate timestamp(s)" in Fill Gaps | The file has repeated times, often from joining downloads. Remove the repeats and open it again. |

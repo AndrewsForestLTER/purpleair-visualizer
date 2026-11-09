@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import queue
 import sys
+import threading
 import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -16,6 +20,17 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 
 from purpleair_visualizer import __version__
+from purpleair_visualizer.api import (
+    AVERAGES,
+    DEFAULT_FIELDS,
+    OPTIONAL_FIELDS,
+    DownloadCancelled,
+    HistoryRequest,
+    PurpleAirError,
+    check_key,
+    download_history,
+    split_range,
+)
 from purpleair_visualizer.aqi import BREAKPOINTS, CATEGORIES, aqi_color, series_to_aqi
 from purpleair_visualizer.data import (
     detect_pm25_column,
@@ -33,7 +48,12 @@ from purpleair_visualizer.processing import (
     format_cell,
     pad_timesteps,
 )
+from purpleair_visualizer.settings import SETTINGS_PATH, initial_api_key, load_settings, save_settings
 
+logger = logging.getLogger(__name__)
+
+POLL_MILLISECONDS = 100
+CONFIRM_REQUESTS = 5
 PREVIEW_ROWS = 100
 MISSING_LISTED = 10
 AUTO_INTERVAL = "Auto-detect"
@@ -106,6 +126,265 @@ def ask_save_csv(df: pd.DataFrame, title: str) -> Path | None:
         messagebox.showerror("Save failed", str(error))
         return None
     return Path(name)
+
+
+def unique_path(path: Path) -> Path:
+    """Return the path, adding a number if a file already exists there."""
+    candidate = path
+    number = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}_{number}{path.suffix}")
+        number += 1
+    return candidate
+
+
+class DownloadTab(ttk.Frame):
+    """Downloads a sensor's history from the PurpleAir API and opens it."""
+
+    def __init__(self, parent: ttk.Notebook, app: "App") -> None:
+        super().__init__(parent)
+        self.app = app
+        self.events: queue.Queue[tuple[str, object]] = queue.Queue()
+        self.cancel = threading.Event()
+        self.running = False
+        saved = load_settings()
+
+        form = ttk.Frame(self, padding=10)
+        form.pack(fill=tk.X)
+        form.columnconfigure(1, weight=1)
+
+        ttk.Label(form, text="API read key:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.key_var = tk.StringVar(value=initial_api_key(saved))
+        ttk.Entry(form, textvariable=self.key_var, show="*", width=50).grid(row=0, column=1, sticky=tk.EW, padx=5)
+        self.test_button = ttk.Button(form, text="Test Key", command=self.test_key)
+        self.test_button.grid(row=0, column=2, sticky=tk.W)
+        self.remember_var = tk.BooleanVar(value=bool(saved.get("api_key")))
+        ttk.Checkbutton(
+            form, text=f"Remember key on this computer (stored unencrypted in {SETTINGS_PATH})", variable=self.remember_var
+        ).grid(row=1, column=1, columnspan=2, sticky=tk.W, padx=5)
+
+        ttk.Label(form, text="Sensor index:").grid(row=2, column=0, sticky=tk.W, pady=3)
+        self.sensor_var = tk.StringVar(value=str(saved.get("sensor_index", "")))
+        ttk.Entry(form, textvariable=self.sensor_var, width=14).grid(row=2, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(form, text="Private sensor read key:").grid(row=3, column=0, sticky=tk.W, pady=3)
+        self.read_key_var = tk.StringVar()
+        ttk.Entry(form, textvariable=self.read_key_var, show="*", width=30).grid(row=3, column=1, sticky=tk.W, padx=5)
+
+        today = pd.Timestamp.now(tz="UTC").normalize()
+        ttk.Label(form, text="Start date (UTC):").grid(row=4, column=0, sticky=tk.W, pady=3)
+        self.start_var = tk.StringVar(value=f"{today - pd.Timedelta(days=30):%Y-%m-%d}")
+        ttk.Entry(form, textvariable=self.start_var, width=14).grid(row=4, column=1, sticky=tk.W, padx=5)
+        ttk.Label(form, text="End date (UTC, included):").grid(row=5, column=0, sticky=tk.W, pady=3)
+        self.end_var = tk.StringVar(value=f"{today:%Y-%m-%d}")
+        ttk.Entry(form, textvariable=self.end_var, width=14).grid(row=5, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(form, text="Average:").grid(row=6, column=0, sticky=tk.W, pady=3)
+        average = saved.get("average")
+        self.average_var = tk.StringVar(value=average if average in AVERAGES else "1 hour")
+        ttk.Combobox(
+            form, textvariable=self.average_var, values=list(AVERAGES), state="readonly", width=12
+        ).grid(row=6, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(form, text="Fields:").grid(row=7, column=0, sticky=tk.NW, pady=3)
+        fields_frame = ttk.Frame(form)
+        fields_frame.grid(row=7, column=1, columnspan=2, sticky=tk.W, padx=5)
+        chosen = saved.get("fields") if isinstance(saved.get("fields"), list) else list(DEFAULT_FIELDS)
+        self.field_vars: dict[str, tk.BooleanVar] = {}
+        for index, field in enumerate((*DEFAULT_FIELDS, *OPTIONAL_FIELDS)):
+            self.field_vars[field] = tk.BooleanVar(value=field in chosen)
+            ttk.Checkbutton(fields_frame, text=field, variable=self.field_vars[field]).grid(
+                row=index // 4, column=index % 4, sticky=tk.W, padx=(0, 15)
+            )
+        ttk.Label(form, text="Other fields (comma separated):").grid(row=8, column=0, sticky=tk.W, pady=3)
+        self.extra_var = tk.StringVar(value=str(saved.get("extra_fields", "")))
+        ttk.Entry(form, textvariable=self.extra_var).grid(row=8, column=1, sticky=tk.EW, padx=5)
+
+        ttk.Label(form, text="Save to folder:").grid(row=9, column=0, sticky=tk.W, pady=3)
+        self.folder_var = tk.StringVar(value=str(saved.get("folder") or Path.home() / "PurpleAir Downloads"))
+        ttk.Entry(form, textvariable=self.folder_var).grid(row=9, column=1, sticky=tk.EW, padx=5)
+        ttk.Button(form, text="Browse...", command=self.choose_folder).grid(row=9, column=2, sticky=tk.W)
+
+        actions = ttk.Frame(self, padding=(10, 0))
+        actions.pack(fill=tk.X)
+        self.download_button = ttk.Button(actions, text="Download and Open", command=self.start)
+        self.download_button.pack(side=tk.LEFT)
+        self.cancel_button = ttk.Button(actions, text="Cancel", command=self.cancel.set, state=tk.DISABLED)
+        self.cancel_button.pack(side=tk.LEFT, padx=5)
+        self.progress = ttk.Progressbar(actions, mode="determinate", length=300)
+        self.progress.pack(side=tk.LEFT, padx=10)
+        self.message = ttk.Label(self, text="", padding=10, wraplength=900)
+        self.message.pack(anchor=tk.W)
+        ttk.Label(
+            self,
+            text="Get an API read key at develop.purpleair.com. Downloads use API points from your PurpleAir account.",
+            foreground="gray",
+            padding=(10, 0),
+        ).pack(anchor=tk.W)
+
+    def on_data_loaded(self) -> None:
+        """Nothing here depends on the loaded file."""
+
+    def choose_folder(self) -> None:
+        """Ask where downloads should be saved."""
+        folder = filedialog.askdirectory(title="Save downloads to")
+        if folder:
+            self.folder_var.set(folder)
+
+    def _selected_fields(self) -> tuple[str, ...]:
+        """Combine ticked fields and typed fields, without repeats."""
+        ticked = [field for field, var in self.field_vars.items() if var.get()]
+        typed = [field.strip() for field in self.extra_var.get().split(",") if field.strip()]
+        return tuple(dict.fromkeys([*ticked, *typed]))
+
+    def _build_job(self) -> HistoryRequest:
+        """Validate the form.
+
+        Returns:
+            The download to run.
+
+        Raises:
+            ValueError: If an entry is missing or invalid.
+        """
+        api_key = self.key_var.get().strip()
+        if not api_key:
+            raise ValueError("Enter your PurpleAir API read key.")
+        sensor = self.sensor_var.get().strip()
+        if not sensor.isdigit():
+            raise ValueError("The sensor index must be a whole number, such as 115739.")
+        fields = self._selected_fields()
+        if not fields:
+            raise ValueError("Choose at least one field.")
+        try:
+            start = pd.Timestamp(self.start_var.get().strip(), tz="UTC")
+            end = pd.Timestamp(self.end_var.get().strip(), tz="UTC") + pd.Timedelta(days=1)
+        except ValueError:
+            raise ValueError("Enter dates as YYYY-MM-DD.") from None
+        if pd.isna(start) or pd.isna(end):
+            raise ValueError("Enter dates as YYYY-MM-DD.")
+        return HistoryRequest(
+            sensor_index=int(sensor),
+            api_key=api_key,
+            start=start,
+            end=end,
+            average=self.average_var.get(),
+            fields=fields,
+            read_key=self.read_key_var.get().strip(),
+        )
+
+    def _save_choices(self) -> None:
+        """Remember the form for next time. The key is kept only if asked."""
+        settings = {
+            "sensor_index": self.sensor_var.get().strip(),
+            "average": self.average_var.get(),
+            "fields": [field for field, var in self.field_vars.items() if var.get()],
+            "extra_fields": self.extra_var.get().strip(),
+            "folder": self.folder_var.get().strip(),
+        }
+        if self.remember_var.get():
+            settings["api_key"] = self.key_var.get().strip()
+        try:
+            save_settings(settings)
+        except OSError as error:
+            self.app.set_status(f"Could not save settings: {error}")
+
+    def _set_running(self, running: bool) -> None:
+        """Switch the buttons between idle and working states."""
+        self.running = running
+        idle = tk.DISABLED if running else tk.NORMAL
+        self.download_button.config(state=idle)
+        self.test_button.config(state=idle)
+        self.cancel_button.config(state=tk.NORMAL if running else tk.DISABLED)
+
+    def _run_in_background(self, work: Callable[[], object], kind: str) -> None:
+        """Run network work off the interface thread and report through a queue."""
+
+        def target() -> None:
+            try:
+                self.events.put((kind, work()))
+            except DownloadCancelled:
+                self.events.put(("cancelled", None))
+            except (PurpleAirError, ValueError, OSError) as error:
+                self.events.put(("error", str(error)))
+            except Exception:
+                logger.exception("Unexpected download failure")
+                self.events.put(("error", "Something unexpected went wrong during the download."))
+
+        self.cancel.clear()
+        self._set_running(True)
+        threading.Thread(target=target, daemon=True).start()
+        self.after(POLL_MILLISECONDS, self._poll)
+
+    def _poll(self) -> None:
+        """Handle messages from the background work."""
+        finished = False
+        while True:
+            try:
+                kind, value = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "progress":
+                done, total = value
+                self.progress.config(maximum=total, value=done)
+                self.message.config(text=f"Finished request {done} of {total}...")
+                continue
+            finished = True
+            self._finish(kind, value)
+        if not finished:
+            self.after(POLL_MILLISECONDS, self._poll)
+
+    def _finish(self, kind: str, value: object) -> None:
+        """Show the outcome of the background work."""
+        self._set_running(False)
+        if kind == "key":
+            self.message.config(text=f"Key accepted (type: {value}).")
+        elif kind == "cancelled":
+            self.message.config(text="Download cancelled.")
+        elif kind == "error":
+            self.message.config(text=str(value))
+            messagebox.showerror("PurpleAir download", str(value))
+        elif kind == "saved":
+            self.message.config(text=f"Saved {value}")
+            self.app.load_path(value)
+            self.app.notebook.select(self.app.preview)
+
+    def test_key(self) -> None:
+        """Check the API key without downloading data."""
+        api_key = self.key_var.get().strip()
+        if not api_key:
+            messagebox.showwarning("No key", "Enter your PurpleAir API read key.")
+            return
+        self.message.config(text="Checking key...")
+        self._run_in_background(lambda: check_key(api_key), "key")
+
+    def start(self) -> None:
+        """Validate the form and start the download."""
+        if self.running:
+            return
+        try:
+            job = self._build_job()
+            count = len(split_range(job.start, job.end, job.average))
+        except ValueError as error:
+            messagebox.showerror("Check the form", str(error))
+            return
+        if count > CONFIRM_REQUESTS and not messagebox.askyesno(
+            "Large download", f"This needs {count} API requests and will use points from your account. Continue?"
+        ):
+            return
+        self._save_choices()
+        folder = Path(self.folder_var.get().strip())
+        name = f"{job.sensor_index} {job.start:%Y-%m-%d} {job.end - pd.Timedelta(days=1):%Y-%m-%d} {job.average}.csv"
+
+        def work() -> Path:
+            data = download_history(job, lambda done, total: self.events.put(("progress", (done, total))), self.cancel)
+            folder.mkdir(parents=True, exist_ok=True)
+            path = unique_path(folder / name)
+            data.to_csv(path, index=False)
+            return path
+
+        self.progress.config(maximum=count, value=0)
+        self.message.config(text=f"Starting {count} request(s)...")
+        self._run_in_background(work, "saved")
 
 
 class PreviewTab(ttk.Frame):
@@ -495,19 +774,21 @@ class App:
 
         top = ttk.Frame(root, padding=10)
         top.pack(fill=tk.X)
-        self.file_label = ttk.Label(top, text="No file loaded. Open a CSV exported from PurpleAir to begin.")
+        self.file_label = ttk.Label(top, text="No file loaded. Download sensor data below, or open a CSV.")
         self.file_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(top, text="Open CSV...", command=self.choose_file).pack(side=tk.RIGHT)
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.download = DownloadTab(self.notebook, self)
         self.preview = PreviewTab(self.notebook, self)
         self.plot = PlotTab(self.notebook, self)
         self.gaps = GapsTab(self.notebook, self)
         self.temperature = TemperatureTab(self.notebook, self)
         self.bounds = BoundsTab(self.notebook, self)
-        self.tabs = (self.preview, self.plot, self.gaps, self.temperature, self.bounds)
-        for tab, title in zip(self.tabs, ("Data Preview", "Plot", "Fill Gaps", "Temperature", "Column Bounds")):
+        self.tabs = (self.download, self.preview, self.plot, self.gaps, self.temperature, self.bounds)
+        titles = ("Download", "Data Preview", "Plot", "Fill Gaps", "Temperature", "Column Bounds")
+        for tab, title in zip(self.tabs, titles):
             self.notebook.add(tab, text=title)
 
         self.status = ttk.Label(root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)

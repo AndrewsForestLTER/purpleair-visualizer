@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15367109.svg)](https://doi.org/10.5281/zenodo.15367109)
 
-A desktop app for exploring data from [PurpleAir](https://www2.purpleair.com/) air quality sensors. Open a CSV file from any sensor to preview it, plot it over time, convert PM2.5 to the EPA Air Quality Index (AQI), find and fill gaps, convert temperature units and check the range of every column.
+A desktop app for exploring data from [PurpleAir](https://www2.purpleair.com/) air quality sensors. Download a sensor's history directly from the PurpleAir API, or open a CSV file from any sensor, to preview it, plot it over time, convert PM2.5 to the EPA Air Quality Index (AQI), find and fill gaps, convert temperature units and check the range of every column.
 
 New here? Follow the **[Quickstart](docs/QUICKSTART.md)**. It takes about five minutes and includes a sample file.
 
@@ -10,6 +10,7 @@ New here? Follow the **[Quickstart](docs/QUICKSTART.md)**. It takes about five m
 
 | Tab | What it does |
 |-----|--------------|
+| **Download** | Fetches any date range for a sensor from the PurpleAir API, saves it as a CSV and opens it. Long ranges are split into several requests automatically. |
 | **Data Preview** | Shows the first 100 rows of the file. |
 | **Plot** | Plots any columns over time on one axis or as stacked subplots, draws PM2.5 as AQI colored by category, and saves a 300 dpi PNG. |
 | **Fill Gaps** | Detects the reporting interval, lists missing timesteps and saves a copy with blank rows added. Existing rows and values are not changed. |
@@ -38,7 +39,9 @@ Some Linux systems need Tk installed separately, for example `sudo apt install p
 
 ## Input data
 
-Any CSV file with a time column and at least one numeric column will work. PurpleAir's [Data Download Tool](https://community.purpleair.com/t/how-to-get-historical-sensor-data-step-by-step-using-the-data-download-tool/11934) produces files like this:
+The **Download** tab needs a free API read key from [PurpleAir Develop](https://develop.purpleair.com/) and your sensor's index number. Downloads use API points from your PurpleAir account. The key is sent only to PurpleAir. It is saved only if you tick **Remember key**, and then unencrypted in `~/.purpleair_visualizer/settings.json`. The app can also read it from the `PURPLEAIR_API_KEY` environment variable.
+
+Any CSV file with a time column and at least one numeric column will also work. The Download tab and PurpleAir's [Data Download Tool](https://community.purpleair.com/t/how-to-get-historical-sensor-data-step-by-step-using-the-data-download-tool/11934) produce files like this:
 
 ```csv
 time_stamp,humidity,temperature,pressure,pm2.5_cf_1

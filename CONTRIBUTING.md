@@ -16,7 +16,7 @@ Please include the app version (shown in the title bar), your operating system, 
 
 ## Code layout
 
-Calculations live in `aqi.py`, `data.py` and `processing.py`, and don't depend on the GUI so they can be tested directly. `gui.py` only handles the interface.
+Calculations and network calls live in `aqi.py`, `data.py`, `processing.py` and `api.py`, and don't depend on the GUI so they can be tested directly. `gui.py` only handles the interface.
 
 ## Style
 

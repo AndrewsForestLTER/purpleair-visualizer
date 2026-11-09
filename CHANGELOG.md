@@ -4,6 +4,10 @@
 
 First public GitHub release. AQI values differ from 1.0.0 for most concentrations above 9.0 µg/m³ (see below).
 
+### Added
+
+- Download tab that fetches sensor history from the PurpleAir API, splitting long date ranges automatically, then saves and opens the CSV.
+
 ### Changed
 
 - AQI now uses the 2024 EPA PM2.5 breakpoints by default. The earlier table can be selected in the Plot tab.
