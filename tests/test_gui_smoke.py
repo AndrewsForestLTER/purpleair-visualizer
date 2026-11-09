@@ -72,6 +72,17 @@ def test_download_saves_and_opens(app: gui.App, tmp_path: Path, monkeypatch: pyt
     assert app.plot.pm_var.get() == "pm2.5_cf_1"
 
 
+@pytest.mark.parametrize(("answer", "opened"), [(True, [gui.DEVELOP_URL]), (False, [])])
+def test_key_help_opens_site_only_when_asked(
+    app: gui.App, monkeypatch: pytest.MonkeyPatch, answer: bool, opened: list[str]
+) -> None:
+    urls: list[str] = []
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda title, text: answer)
+    monkeypatch.setattr(gui.webbrowser, "open", urls.append)
+    app.download.show_key_help()
+    assert urls == opened
+
+
 def test_key_is_saved_only_when_asked(app: gui.App, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     saved: list[dict] = []
     monkeypatch.setattr(gui, "save_settings", saved.append)

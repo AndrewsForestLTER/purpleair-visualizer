@@ -21,7 +21,7 @@ Download [`sample_purpleair.csv`](https://raw.githubusercontent.com/AndrewsFores
 
 The app downloads directly from the PurpleAir API. Your sensor's readings are stored by PurpleAir, so the sensor doesn't need to be nearby.
 
-1. Create an account and an API read key at [PurpleAir Develop](https://develop.purpleair.com/).
+1. Create an account and an API read key at [PurpleAir Develop](https://develop.purpleair.com/). The **How do I get a key?** button in the Download tab walks you through it.
 2. In the app's **Download** tab, paste in your key and click **Test Key**. Tick **Remember key** if you don't want to enter it each time.
 3. Enter your sensor's index number and choose dates (in UTC), an averaging period and fields. The usual fields are ticked for you.
 4. Click **Download and Open**. The app saves a CSV to the folder shown and opens it, ready to plot.

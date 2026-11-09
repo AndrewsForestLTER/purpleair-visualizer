@@ -7,6 +7,7 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -55,6 +56,16 @@ logger = logging.getLogger(__name__)
 POLL_MILLISECONDS = 100
 CONFIRM_REQUESTS = 5
 PREVIEW_ROWS = 100
+DEVELOP_URL = "https://develop.purpleair.com/"
+API_KEY_HELP = (
+    "API keys belong to your PurpleAir account, not to a sensor. One key works for any public sensor.\n\n"
+    "1. Sign in at develop.purpleair.com. Sign-in uses an email linked to a Google account.\n"
+    "2. Open the API Keys tab and create a READ key, or copy one you already have. A write key won't work.\n"
+    "3. Paste it into the API read key box and click Test Key.\n\n"
+    "Private sensors also need that sensor's own read key, entered in the Private sensor read key box.\n\n"
+    "Downloads may use API points from your account. Treat your key like a password.\n\n"
+    "Open develop.purpleair.com now?"
+)
 MISSING_LISTED = 10
 AUTO_INTERVAL = "Auto-detect"
 INTERVALS: dict[str, str | None] = {
@@ -158,6 +169,9 @@ class DownloadTab(ttk.Frame):
         ttk.Entry(form, textvariable=self.key_var, show="*", width=50).grid(row=0, column=1, sticky=tk.EW, padx=5)
         self.test_button = ttk.Button(form, text="Test Key", command=self.test_key)
         self.test_button.grid(row=0, column=2, sticky=tk.W)
+        ttk.Button(form, text="How do I get a key?", command=self.show_key_help).grid(
+            row=0, column=3, sticky=tk.W, padx=5
+        )
         self.remember_var = tk.BooleanVar(value=bool(saved.get("api_key")))
         ttk.Checkbutton(
             form, text=f"Remember key on this computer (stored unencrypted in {SETTINGS_PATH})", variable=self.remember_var
@@ -224,6 +238,11 @@ class DownloadTab(ttk.Frame):
 
     def on_data_loaded(self) -> None:
         """Nothing here depends on the loaded file."""
+
+    def show_key_help(self) -> None:
+        """Explain how to get an API key and offer to open PurpleAir's site."""
+        if messagebox.askyesno("Getting a PurpleAir API key", API_KEY_HELP):
+            webbrowser.open(DEVELOP_URL)
 
     def choose_folder(self) -> None:
         """Ask where downloads should be saved."""
