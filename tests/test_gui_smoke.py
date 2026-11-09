@@ -75,7 +75,7 @@ def test_download_saves_and_opens(app: gui.App, tmp_path: Path, monkeypatch: pyt
     assert zone is PST
     assert job.start == pd.Timestamp("2025-01-01 08:00", tz="UTC")  # midnight PST
     assert job.end == pd.Timestamp("2025-01-03 08:00", tz="UTC")  # the end date is included
-    saved = pd.read_csv(tmp_path / "115739 2025-01-01 2025-01-02 1 hour PST.csv")
+    saved = pd.read_csv(gui.dated_folder(tmp_path) / "115739 2025-01-01 2025-01-02 1 hour PST.csv")
     assert saved["temperature"].tolist() == [10.0]  # Celsius, 1 decimal
     assert app.source_name.startswith("115739")
     assert app.plot.pm_var.get() == "pm2.5_cf_1"
@@ -95,7 +95,7 @@ def test_utc_choice_downloads_in_utc(app: gui.App, tmp_path: Path, monkeypatch: 
     app.download.start()
     pump(app)
     assert seen[0][0].start == pd.Timestamp("2025-01-01", tz="UTC")
-    assert pd.read_csv(tmp_path / "115739 2025-01-01 2025-01-02 1 hour UTC.csv")["temperature"].tolist() == [50.0]
+    assert pd.read_csv(gui.dated_folder(tmp_path) / "115739 2025-01-01 2025-01-02 1 hour UTC.csv")["temperature"].tolist() == [50.0]
 
 
 def test_continue_from_previous_download(app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -134,7 +134,7 @@ def test_continue_from_previous_download(app: gui.App, tmp_path: Path, monkeypat
     app.download.start()
     pump(app)
     assert seen[0].fields == ("humidity", "temperature", "pm2.5_atm")
-    saved = pd.read_csv(tmp_path / "115739 2025-01-01 2025-01-02 1 hour UTC.csv")
+    saved = pd.read_csv(gui.dated_folder(tmp_path) / "115739 2025-01-01 2025-01-02 1 hour UTC.csv")
     assert saved["time_stamp"].tolist() == [
         "2025-01-01 22:00:00+00:00",
         "2025-01-01 23:00:00+00:00",
@@ -178,6 +178,39 @@ def test_previous_download_for_another_sensor_is_refused(
     assert "sensor 999" in errors[0]
     app.download.clear_previous()
     assert app.download.previous is None
+
+
+@pytest.mark.parametrize(
+    ("source", "suffix", "expected"),
+    [
+        ("115739 2023-01-01 2026-09-30 1 hour UTC.csv", "bounds", "115739 2023-01-01 2026-09-30 bounds.csv"),
+        ("115739_2023-01-01_2025-05-05_60-Minute_Average.csv", "filled", "115739_2023-01-01_2025-05-05 filled.csv"),
+        ("my data.csv", "celsius", "my data celsius.csv"),
+        ("", "plot", "plot.csv"),
+    ],
+)
+def test_export_name(source: str, suffix: str, expected: str) -> None:
+    assert gui.export_name(source, suffix) == expected
+
+
+def test_dated_folder() -> None:
+    assert gui.dated_folder(Path("base"), gui.date(2026, 11, 9)) == Path("base/PurpleAir Download 2026-11-09")
+
+
+def test_exports_suggest_dated_folder_and_name(app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    asked = []
+    monkeypatch.setattr(gui.filedialog, "asksaveasfilename", lambda **options: asked.append(options) or "")
+    app.source_name = "115739 2023-01-01 2026-09-30 1 hour UTC.csv"
+    app.download.folder_var.set(str(tmp_path))
+    app.bounds.refresh()
+    app.bounds.export()
+    app.plot.draw()
+    app.plot.save()
+    folder = str(gui.dated_folder(tmp_path))
+    assert [(options["initialdir"], options["initialfile"]) for options in asked] == [
+        (folder, "115739 2023-01-01 2026-09-30 bounds.csv"),
+        (folder, "115739 2023-01-01 2026-09-30 plot.png"),
+    ]
 
 
 def test_plot_and_gaps_use_chosen_zone(app: gui.App) -> None:

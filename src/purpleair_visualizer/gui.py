@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import sys
 import threading
 import tkinter as tk
 import webbrowser
 from collections.abc import Callable
-from datetime import tzinfo
+from datetime import date, tzinfo
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -84,6 +85,9 @@ API_KEY_HELP = (
 )
 MISSING_LISTED = 10
 NO_PREVIOUS = "None. Choose one to add to its record without gaps."
+DEFAULT_FOLDER = Path.home() / "PurpleAir Downloads"
+# Sensor index and date range at the start of a download's name, e.g. "115739 2023-01-01 2026-09-30".
+_SENSOR_AND_DATES = re.compile(r"^\d+[ _]\d{4}-\d{2}-\d{2}[ _]\d{4}-\d{2}-\d{2}")
 AUTO_INTERVAL = "Auto-detect"
 INTERVALS: dict[str, str | None] = {
     AUTO_INTERVAL: None,
@@ -133,18 +137,55 @@ def fill_table_from_frame(table: ttk.Treeview, df: pd.DataFrame) -> None:
     fill_table(table, [str(column) for column in df.columns], rows)
 
 
-def ask_save_csv(df: pd.DataFrame, title: str) -> Path | None:
+def dated_folder(base: Path, today: date | None = None) -> Path:
+    """Return the folder for one day's downloads and exports.
+
+    Args:
+        base: The folder chosen in the Download tab.
+        today: The date to use. Defaults to today.
+
+    Returns:
+        A folder such as ``base/PurpleAir Download 2026-11-09``.
+    """
+    return base / f"PurpleAir Download {today or date.today():%Y-%m-%d}"
+
+
+def export_name(source_name: str, suffix: str, extension: str = ".csv") -> str:
+    """Suggest a name for a file made from the loaded data.
+
+    Args:
+        source_name: Name of the loaded file.
+        suffix: What the export holds, such as ``bounds``.
+        extension: File extension, with its dot.
+
+    Returns:
+        The sensor index and dates from the loaded name (or its whole stem
+        if it has none), then the suffix, e.g. ``115739 2023-01-01 2026-09-30 bounds.csv``.
+    """
+    stem = Path(source_name).stem
+    match = _SENSOR_AND_DATES.match(stem)
+    base = match.group(0) if match else stem
+    return f"{base} {suffix}{extension}" if base else f"{suffix}{extension}"
+
+
+def ask_save_csv(df: pd.DataFrame, title: str, initialdir: str = "", initialfile: str = "") -> Path | None:
     """Prompt for a location and write a CSV file.
 
     Args:
         df: The data to save.
         title: The dialog title.
+        initialdir: Folder the dialog opens in.
+        initialfile: Suggested file name.
 
     Returns:
         The saved path, or None if cancelled or the write failed.
     """
     name = filedialog.asksaveasfilename(
-        title=title, defaultextension=".csv", filetypes=[("CSV files", "*.csv")]
+        title=title,
+        defaultextension=".csv",
+        filetypes=[("CSV files", "*.csv")],
+        initialdir=initialdir or None,
+        initialfile=initialfile,
     )
     if not name:
         return None
@@ -238,7 +279,7 @@ class DownloadTab(ttk.Frame):
         ttk.Entry(form, textvariable=self.extra_var).grid(row=8, column=1, sticky=tk.EW, padx=5)
 
         ttk.Label(form, text="Save to folder:").grid(row=9, column=0, sticky=tk.W, pady=3)
-        self.folder_var = tk.StringVar(value=str(saved.get("folder") or Path.home() / "PurpleAir Downloads"))
+        self.folder_var = tk.StringVar(value=str(saved.get("folder") or DEFAULT_FOLDER))
         ttk.Entry(form, textvariable=self.folder_var).grid(row=9, column=1, sticky=tk.EW, padx=5)
         ttk.Button(form, text="Browse...", command=self.choose_folder).grid(row=9, column=2, sticky=tk.W)
 
@@ -545,7 +586,7 @@ class DownloadTab(ttk.Frame):
             ):
                 return
         self._save_choices()
-        folder = Path(self.folder_var.get().strip())
+        folder = dated_folder(Path(self.folder_var.get().strip()))
         zone = self.app.time_zone
         first = (job.start if previous is None else min(job.start, previous.first_time)).tz_convert(zone)
         last = (job.end - pd.Timedelta(days=1)).tz_convert(zone)
@@ -757,7 +798,10 @@ class PlotTab(ttk.Frame):
     def save(self) -> None:
         """Save the current figure as a PNG."""
         name = filedialog.asksaveasfilename(
-            title="Save plot", defaultextension=".png", filetypes=[("PNG files", "*.png")]
+            title="Save plot",
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png")],
+            **self.app.save_options("plot", ".png"),
         )
         if not name:
             return
@@ -838,7 +882,9 @@ class GapsTab(ttk.Frame):
 
     def save(self) -> None:
         """Save the filled data."""
-        if self.result is not None and (path := ask_save_csv(self.result.data, "Save filled data")):
+        if self.result is not None and (path := ask_save_csv(
+            self.result.data, "Save filled data", **self.app.save_options("filled")
+        )):
             self.app.set_status(f"Saved {path.name}")
 
 
@@ -849,6 +895,7 @@ class TemperatureTab(ttk.Frame):
         super().__init__(parent)
         self.app = app
         self.result: pd.DataFrame | None = None
+        self.converted_to = F_TO_C
 
         controls = ttk.Frame(self)
         controls.pack(fill=tk.X, padx=5, pady=5)
@@ -890,13 +937,17 @@ class TemperatureTab(ttk.Frame):
         except ValueError as error:
             messagebox.showerror("Cannot convert", str(error))
             return
+        self.converted_to = self.direction_var.get()
         fill_table_from_frame(self.table, self.result)
         self.save_button.config(state=tk.NORMAL)
         self.app.set_status(f"Converted {self.column_var.get()}; the loaded file is unchanged")
 
     def save(self) -> None:
         """Save the converted data."""
-        if self.result is not None and (path := ask_save_csv(self.result, "Save converted data")):
+        suffix = "celsius" if self.converted_to == F_TO_C else "fahrenheit"
+        if self.result is not None and (
+            path := ask_save_csv(self.result, "Save converted data", **self.app.save_options(suffix))
+        ):
             self.app.set_status(f"Saved {path.name}")
 
 
@@ -952,7 +1003,9 @@ class BoundsTab(ttk.Frame):
 
     def export(self) -> None:
         """Export the unrounded results."""
-        if self.results is not None and (path := ask_save_csv(self.results, "Export bounds")):
+        if self.results is not None and (
+            path := ask_save_csv(self.results, "Export bounds", **self.app.save_options("bounds"))
+        ):
             self.app.set_status(f"Saved {path.name}")
 
 
@@ -999,6 +1052,27 @@ class App:
     def time_zone(self) -> tzinfo:
         """The zone used for dates, plots and saved files."""
         return TIME_ZONES[self.time_zone_var.get()]
+
+    def save_options(self, suffix: str, extension: str = ".csv") -> dict[str, str]:
+        """Suggest where to save a file made from the loaded data.
+
+        Exports go in today's dated folder inside the Download tab's folder,
+        which is created if needed.
+
+        Args:
+            suffix: What the export holds, such as ``bounds``.
+            extension: File extension, with its dot.
+
+        Returns:
+            ``initialdir`` and ``initialfile`` for a save dialog.
+        """
+        folder = dated_folder(Path(self.download.folder_var.get().strip() or DEFAULT_FOLDER))
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            logger.warning("Could not create %s: %s", folder, error)
+            folder = folder.parent
+        return {"initialdir": str(folder), "initialfile": export_name(self.source_name, suffix, extension)}
 
     def _save_time_zone(self) -> None:
         """Remember the chosen time zone."""

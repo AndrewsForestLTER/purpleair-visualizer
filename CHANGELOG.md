@@ -11,6 +11,7 @@
 ### Changed
 
 - Downloaded columns follow the order the fields were chosen in, and file names include the time zone.
+- Downloads are saved in a `PurpleAir Download yyyy-mm-dd` folder inside the chosen folder. Saving a plot, filled data, converted data or bounds suggests that folder and a name built from the sensor index and dates.
 
 ## 2.0.0 - 2026-11-09
 
