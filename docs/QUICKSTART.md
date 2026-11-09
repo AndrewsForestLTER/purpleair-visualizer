@@ -4,7 +4,7 @@ This guide takes you from nothing to your first air quality plot. You don't need
 
 ## 1. Get the app
 
-**Windows:** download `PurpleAirVisualizer.exe` from the [latest release](https://github.com/AndrewsForestLTER/purpleair-visualizer/releases/latest) and double-click it. If Windows SmartScreen warns about an unrecognized app, choose **More info**, then **Run anyway**.
+**Windows:** download `PurpleAirVisualizer-<version>-windows.zip` from the [latest release](https://github.com/AndrewsForestLTER/purpleair-visualizer/releases/latest), right-click it and choose **Extract All**, then double-click `PurpleAirVisualizer.exe`. If Windows SmartScreen warns about an unrecognized app, choose **More info**, then **Run anyway**.
 
 **macOS or Linux:** install Python 3.10 or later, then follow the steps under [Install](../README.md#install) in the README.
 

@@ -21,7 +21,7 @@ The app works with any averaging interval and any set of fields. Dates, plots an
 
 ## Install
 
-**Windows:** download `PurpleAirVisualizer.exe` from the [latest release](https://github.com/AndrewsForestLTER/purpleair-visualizer/releases/latest) and double-click it. Nothing else is needed.
+**Windows:** download `PurpleAirVisualizer-<version>-windows.zip` from the [latest release](https://github.com/AndrewsForestLTER/purpleair-visualizer/releases/latest), extract it, and double-click `PurpleAirVisualizer.exe`. Nothing else is needed.
 
 **Windows, macOS or Linux, with Python 3.10 or later:**
 
