@@ -15,13 +15,14 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timezone, tzinfo
 from threading import Event
 from typing import Any, NamedTuple
 
 import pandas as pd
 
 from purpleair_visualizer import __version__
-from purpleair_visualizer.data import parse_times
+from purpleair_visualizer.data import format_times, parse_times
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +225,7 @@ def download_history(
     cancel: Event | None = None,
     request: RequestJson = request_json,
     sleep: Callable[[float], None] = time.sleep,
+    time_zone: tzinfo = timezone.utc,
 ) -> pd.DataFrame:
     """Download a sensor's history as one table sorted by time.
 
@@ -233,9 +235,11 @@ def download_history(
         cancel: Set this event to stop the download.
         request: Function that performs the HTTP call.
         sleep: Function used to wait between requests.
+        time_zone: Zone for the output time column.
 
     Returns:
-        One row per timestamp, with UTC times in PurpleAir's export format.
+        One row per timestamp, columns in the requested field order, and
+        times written as text with their UTC offset.
 
     Raises:
         DownloadCancelled: If ``cancel`` was set.
@@ -263,6 +267,7 @@ def download_history(
         .sort_values(TIME_COLUMN, kind="stable")
         .reset_index(drop=True)
     )
-    combined[TIME_COLUMN] = combined[TIME_COLUMN].dt.strftime("%Y-%m-%d %H:%M:%S+00:00")
-    ordered = [TIME_COLUMN, *[column for column in combined.columns if column != TIME_COLUMN]]
-    return combined[ordered]
+    combined[TIME_COLUMN] = format_times(combined[TIME_COLUMN], time_zone)
+    requested = [field for field in job.fields if field in combined.columns]
+    others = [column for column in combined.columns if column not in (TIME_COLUMN, *requested)]
+    return combined[[TIME_COLUMN, *requested, *others]]

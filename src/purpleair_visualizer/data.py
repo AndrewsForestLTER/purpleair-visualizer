@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import re
+from datetime import timedelta, timezone, tzinfo
 from pathlib import Path
 
 import pandas as pd
 
 ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+PST = timezone(timedelta(hours=-8), "PST")
+TIME_ZONES: dict[str, tzinfo] = {
+    "PST (UTC-8, no daylight saving)": PST,
+    "UTC": timezone.utc,
+}
+DEFAULT_TIME_ZONE = "PST (UTC-8, no daylight saving)"
 EPOCH_SECONDS_MIN = 1e8
 EPOCH_MILLISECONDS_MIN = 1e11
 
@@ -110,6 +117,26 @@ def parse_times(values: pd.Series) -> pd.Series:
         unit = "ms" if magnitude >= EPOCH_MILLISECONDS_MIN else "s"
         return pd.to_datetime(values, unit=unit, utc=True, errors="coerce")
     return pd.to_datetime(values, utc=True, format="mixed", errors="coerce")
+
+
+def zone_name(zone: tzinfo) -> str:
+    """Return a short label for a time zone, such as PST or UTC."""
+    return zone.tzname(None) or str(zone)
+
+
+def format_times(times: pd.Series, zone: tzinfo) -> pd.Series:
+    """Write timestamps as text in a time zone, keeping the UTC offset.
+
+    Args:
+        times: Time-zone-aware timestamps.
+        zone: The zone to express them in.
+
+    Returns:
+        Text such as ``2022-12-31 16:00:00-08:00``.
+    """
+    return times.dt.tz_convert(zone).dt.strftime("%Y-%m-%d %H:%M:%S%z").str.replace(
+        r"([+-]\d{2})(\d{2})$", r"\1:\2", regex=True
+    )
 
 
 def sorted_by_time(df: pd.DataFrame, time_column: str) -> tuple[pd.DataFrame, int]:

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from purpleair_visualizer.cli import bounds_main
+from purpleair_visualizer.data import PST
 from purpleair_visualizer.processing import (
     C_TO_F,
     F_TO_C,
@@ -29,6 +30,13 @@ def test_pad_adds_blank_hour() -> None:
     assert result.interval == pd.Timedelta("1h")
     assert result.missing.hour.tolist() == [2]
     assert pd.isna(result.data["v"].iloc[2])
+
+
+def test_pad_writes_times_in_chosen_zone(tmp_path: Path) -> None:
+    df = pd.DataFrame({"t": stamps("00:00:00", "02:00:00", "03:00:00"), "v": [1.0, 2.0, 3.0]})
+    path = tmp_path / "pst.csv"
+    pad_timesteps(df, "t", time_zone=PST).data.to_csv(path, index=False)
+    assert path.read_text().splitlines()[1:3] == ["2022-12-31 16:00:00-08:00,1.0", "2022-12-31 17:00:00-08:00,"]
 
 
 def test_pad_keeps_all_ten_minute_rows() -> None:

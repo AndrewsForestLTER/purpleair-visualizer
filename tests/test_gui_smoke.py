@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from purpleair_visualizer.data import PST
+
 tk = pytest.importorskip("tkinter")
 
 from purpleair_visualizer import gui  # noqa: E402
@@ -29,6 +31,8 @@ def tk_root() -> Iterator[tk.Tk]:
 def app(tk_root: tk.Tk, monkeypatch: pytest.MonkeyPatch) -> Iterator[gui.App]:
     for name in ("showerror", "showwarning"):
         monkeypatch.setattr(gui.messagebox, name, lambda title, message: pytest.fail(f"{title}: {message}"))
+    monkeypatch.setattr(gui, "load_settings", lambda: {})  # keep the user's real settings out of tests
+    monkeypatch.setattr(gui, "save_settings", lambda settings: None)
     window = tk.Toplevel(tk_root)
     window.withdraw()
     application = gui.App(window)
@@ -55,21 +59,113 @@ def fill_form(app: gui.App, folder: Path) -> None:
 
 
 def test_download_saves_and_opens(app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(gui, "save_settings", lambda settings: None)
     seen = []
 
-    def fake(job: object, progress: object, cancel: object) -> pd.DataFrame:
-        seen.append(job)
-        return pd.DataFrame({"time_stamp": ["2025-01-01 00:00:00+00:00"], "pm2.5_cf_1": [1.5]})
+    def fake(job: object, progress: object, cancel: object, time_zone: object) -> pd.DataFrame:
+        seen.append((job, time_zone))
+        return pd.DataFrame(
+            {"time_stamp": ["2024-12-31 16:00:00-08:00"], "temperature": [50.0], "pm2.5_cf_1": [1.5]}
+        )
 
     monkeypatch.setattr(gui, "download_history", fake)
     fill_form(app, tmp_path)
     app.download.start()
     pump(app)
-    assert seen[0].end == pd.Timestamp("2025-01-03", tz="UTC")  # the end date is included
-    assert list(tmp_path.glob("115739 2025-01-01 2025-01-02 1 hour.csv"))
+    job, zone = seen[0]
+    assert zone is PST
+    assert job.start == pd.Timestamp("2025-01-01 08:00", tz="UTC")  # midnight PST
+    assert job.end == pd.Timestamp("2025-01-03 08:00", tz="UTC")  # the end date is included
+    saved = pd.read_csv(tmp_path / "115739 2025-01-01 2025-01-02 1 hour PST.csv")
+    assert saved["temperature"].tolist() == [10.0]  # Celsius, 1 decimal
     assert app.source_name.startswith("115739")
     assert app.plot.pm_var.get() == "pm2.5_cf_1"
+
+
+def test_utc_choice_downloads_in_utc(app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+    monkeypatch.setattr(
+        gui,
+        "download_history",
+        lambda job, progress, cancel, time_zone: seen.append((job, time_zone))
+        or pd.DataFrame({"time_stamp": ["2025-01-01 00:00:00+00:00"], "temperature": [50.0]}),
+    )
+    app.time_zone_var.set("UTC")
+    fill_form(app, tmp_path)
+    app.download.celsius_var.set(False)
+    app.download.start()
+    pump(app)
+    assert seen[0][0].start == pd.Timestamp("2025-01-01", tz="UTC")
+    assert pd.read_csv(tmp_path / "115739 2025-01-01 2025-01-02 1 hour UTC.csv")["temperature"].tolist() == [50.0]
+
+
+def test_continue_from_previous_download(app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    previous = tmp_path / "115739 2025-01-01 2025-01-01 60-Minute Average.csv"
+    previous.write_text(
+        "time_stamp,humidity,temperature,pm2.5_atm\n"
+        "2025-01-01T22:00:00Z,60,9.5,1.0\n2025-01-01T23:00:00Z,61,9.0,2.0\n"
+    )
+    seen = []
+
+    def fake(job: object, progress: object, cancel: object, time_zone: object) -> pd.DataFrame:
+        seen.append(job)
+        return pd.DataFrame(
+            {
+                "time_stamp": ["2025-01-01 23:00:00+00:00", "2025-01-02 00:00:00+00:00"],
+                "humidity": [61, 62],
+                "temperature": [48.2, 46.4],
+                "pm2.5_atm": [2.0, 3.0],
+            }
+        )
+
+    monkeypatch.setattr(gui, "download_history", fake)
+    app.download.sensor_var.set("1")
+    app.download.average_var.set("10 minutes")
+    app.download.use_previous(previous)
+    assert app.download.sensor_var.get() == "115739"
+    assert app.download.average_var.get() == "1 hour"
+    assert app.time_zone_var.get() == "UTC"  # matches the previous file
+    assert "Time zone set to UTC" in app.download.message.cget("text")
+    assert app.download.start_var.get() == "2025-01-01"  # the day of the last reading
+    assert [field for field, var in app.download.field_vars.items() if var.get()] == ["humidity", "temperature", "pm2.5_atm"]
+
+    app.download.key_var.set("secret")
+    app.download.end_var.set("2025-01-02")
+    app.download.folder_var.set(str(tmp_path))
+    app.download.start()
+    pump(app)
+    assert seen[0].fields == ("humidity", "temperature", "pm2.5_atm")
+    saved = pd.read_csv(tmp_path / "115739 2025-01-01 2025-01-02 1 hour UTC.csv")
+    assert saved["time_stamp"].tolist() == [
+        "2025-01-01 22:00:00+00:00",
+        "2025-01-01 23:00:00+00:00",
+        "2025-01-02 00:00:00+00:00",
+    ]
+    assert saved["temperature"].tolist() == [9.5, 9.0, 8.0]
+    assert previous.read_text().count("\n") == 3  # the previous file is left alone
+
+
+def test_previous_download_for_another_sensor_is_refused(
+    app: gui.App, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    previous = tmp_path / "999 old.csv"
+    previous.write_text("time_stamp,humidity\n2025-01-01T00:00:00Z,60\n2025-01-01T01:00:00Z,61\n")
+    errors = []
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda title, message: errors.append(message))
+    monkeypatch.setattr(gui, "download_history", lambda *args, **kwargs: pytest.fail("should not download"))
+    app.download.use_previous(previous)
+    fill_form(app, tmp_path)
+    app.download.start()
+    assert "sensor 999" in errors[0]
+    app.download.clear_previous()
+    assert app.download.previous is None
+
+
+def test_plot_and_gaps_use_chosen_zone(app: gui.App) -> None:
+    app.plot.draw()
+    assert app.plot.fig.axes[-1].get_xlabel() == "Time (PST)"
+    app.gaps.run()
+    assert str(app.gaps.result.data["time_stamp"].iloc[0]) == "2025-07-31 16:00:00-08:00"
+    assert "PST" in app.gaps.summary.get("1.0", "end")
 
 
 @pytest.mark.parametrize(("answer", "opened"), [(True, [gui.DEVELOP_URL]), (False, [])])

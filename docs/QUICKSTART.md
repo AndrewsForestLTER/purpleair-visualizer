@@ -23,8 +23,10 @@ The app downloads directly from the PurpleAir API. Your sensor's readings are st
 
 1. Create an account and an API read key at [PurpleAir Develop](https://develop.purpleair.com/). The **How do I get a key?** button in the Download tab walks you through it.
 2. In the app's **Download** tab, paste in your key and click **Test Key**. Tick **Remember key** if you don't want to enter it each time.
-3. Enter your sensor's index number and choose dates (in UTC), an averaging period and fields. The usual fields are ticked for you. To find the index, click the sensor on the [PurpleAir map](https://map.purpleair.com/) and look for `select=` followed by a number in the page address, or use the **How do I find this?** button.
+3. Enter your sensor's index number and choose dates, an averaging period and fields. Dates, plots and saved times use the **Time zone** chosen at the top of the window: PST (UTC-8 all year, no daylight saving) by default, or UTC. Temperature is converted to Celsius unless you untick it. The usual fields are ticked for you. To find the index, click the sensor on the [PurpleAir map](https://map.purpleair.com/) and look for `select=` followed by a number in the page address, or use the **How do I find this?** button.
 4. Click **Download and Open**. The app saves a CSV to the folder shown and opens it, ready to plot.
+
+**Adding to an earlier download:** click **Continue from...** and choose the earlier CSV (from this app or PurpleAir's Data Download Tool). The app fills in the sensor index, average, fields and time zone to match it, and sets the start date to the day of its last reading, so the new download overlaps it and nothing is missed. With **Combine with the previous file** ticked, the app saves one file holding both, with repeated times removed. The earlier file is not changed. Check that the temperature setting matches the earlier file, since the app cannot tell Celsius from Fahrenheit.
 
 Downloads use API points from your PurpleAir account, and the app asks first before a very large download. Private sensors also need their own read key. See PurpleAir's [API overview](https://community.purpleair.com/t/about-the-purpleair-api/7145) for details on points. CSV files from PurpleAir's own Data Download Tool also work: use **Open CSV...**.
 

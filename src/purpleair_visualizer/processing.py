@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timezone, tzinfo
 
 import pandas as pd
 
@@ -44,7 +45,10 @@ def infer_interval(times: pd.Series) -> pd.Timedelta:
 
 
 def pad_timesteps(
-    df: pd.DataFrame, time_column: str, interval: pd.Timedelta | str | None = None
+    df: pd.DataFrame,
+    time_column: str,
+    interval: pd.Timedelta | str | None = None,
+    time_zone: tzinfo = timezone.utc,
 ) -> PadResult:
     """Add blank rows for timesteps missing from a regular time series.
 
@@ -55,6 +59,7 @@ def pad_timesteps(
         df: The loaded data.
         time_column: Column holding the timestamps.
         interval: Expected spacing. Detected from the data when None.
+        time_zone: Zone for the output time column.
 
     Returns:
         The padded data with a summary of what was added.
@@ -87,6 +92,7 @@ def pad_timesteps(
     grid = pd.date_range(work.index.min(), work.index.max(), freq=step)
     combined = grid.union(work.index)
     padded = work.reindex(combined)
+    padded.index = padded.index.tz_convert(time_zone)
     padded.index.name = time_column
     return PadResult(
         data=padded.reset_index()[list(df.columns)],

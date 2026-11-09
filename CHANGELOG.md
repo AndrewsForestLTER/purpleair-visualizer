@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Time zone choice at the top of the window, PST (UTC-8, no daylight saving) by default or UTC, used for download dates, plots, gap filling and saved files.
+- Downloads convert temperature to Celsius with one decimal by default.
+- **Continue from...** in the Download tab matches the form to an earlier download, starts on the day of its last reading, and can combine both into one file without repeated times.
+
+### Changed
+
+- Downloaded columns follow the order the fields were chosen in, and file names include the time zone.
+
 ## 2.0.0 - 2026-11-09
 
 First public GitHub release. AQI values differ from 1.0.0 for most concentrations above 9.0 µg/m³ (see below).

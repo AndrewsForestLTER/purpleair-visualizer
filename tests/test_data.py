@@ -1,12 +1,16 @@
 """Tests for loading files and detecting columns."""
 
+from datetime import timezone
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from purpleair_visualizer.data import (
+    PST,
     detect_pm25_column,
+    format_times,
+    zone_name,
     detect_time_column,
     load_csv,
     numeric_columns,
@@ -51,6 +55,15 @@ def test_parses_epoch_seconds_and_milliseconds(value: int) -> None:
 def test_small_numbers_are_not_times() -> None:
     with pytest.raises(ValueError, match="does not look like a time"):
         parse_times(pd.Series([1, 2, 3], name="humidity"))
+
+
+def test_pst_text_round_trips() -> None:
+    utc = pd.Series(pd.to_datetime(["2023-01-01 00:00", "2023-07-01 00:00"], utc=True))
+    text = format_times(utc, PST)
+    assert text.tolist() == ["2022-12-31 16:00:00-08:00", "2023-06-30 16:00:00-08:00"]  # no daylight saving
+    assert parse_times(text).tolist() == utc.tolist()
+    assert format_times(utc, timezone.utc).iloc[0] == "2023-01-01 00:00:00+00:00"
+    assert zone_name(PST) == "PST"
 
 
 def test_sorted_by_time_sorts_and_counts_bad_rows() -> None:

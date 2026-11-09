@@ -9,6 +9,7 @@ import threading
 import tkinter as tk
 import webbrowser
 from collections.abc import Callable
+from datetime import tzinfo
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -25,6 +26,7 @@ from purpleair_visualizer.api import (
     AVERAGES,
     DEFAULT_FIELDS,
     OPTIONAL_FIELDS,
+    TIME_COLUMN,
     DownloadCancelled,
     HistoryRequest,
     PurpleAirError,
@@ -34,11 +36,14 @@ from purpleair_visualizer.api import (
 )
 from purpleair_visualizer.aqi import BREAKPOINTS, CATEGORIES, aqi_color, series_to_aqi
 from purpleair_visualizer.data import (
+    DEFAULT_TIME_ZONE,
+    TIME_ZONES,
     detect_pm25_column,
     detect_time_column,
     load_csv,
     numeric_columns,
     sorted_by_time,
+    zone_name,
 )
 from purpleair_visualizer.processing import (
     C_TO_F,
@@ -49,6 +54,7 @@ from purpleair_visualizer.processing import (
     format_cell,
     pad_timesteps,
 )
+from purpleair_visualizer.resume import PreviousDownload, combine_downloads, read_previous_download
 from purpleair_visualizer.settings import SETTINGS_PATH, initial_api_key, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
@@ -77,6 +83,7 @@ API_KEY_HELP = (
     "Open develop.purpleair.com now?"
 )
 MISSING_LISTED = 10
+NO_PREVIOUS = "None. Choose one to add to its record without gaps."
 AUTO_INTERVAL = "Auto-detect"
 INTERVALS: dict[str, str | None] = {
     AUTO_INTERVAL: None,
@@ -198,11 +205,14 @@ class DownloadTab(ttk.Frame):
         self.read_key_var = tk.StringVar()
         ttk.Entry(form, textvariable=self.read_key_var, show="*", width=30).grid(row=3, column=1, sticky=tk.W, padx=5)
 
-        today = pd.Timestamp.now(tz="UTC").normalize()
-        ttk.Label(form, text="Start date (UTC):").grid(row=4, column=0, sticky=tk.W, pady=3)
+        today = pd.Timestamp.now(tz=self.app.time_zone).normalize()
+        ttk.Label(form, text="Start date:").grid(row=4, column=0, sticky=tk.W, pady=3)
         self.start_var = tk.StringVar(value=f"{today - pd.Timedelta(days=30):%Y-%m-%d}")
         ttk.Entry(form, textvariable=self.start_var, width=14).grid(row=4, column=1, sticky=tk.W, padx=5)
-        ttk.Label(form, text="End date (UTC, included):").grid(row=5, column=0, sticky=tk.W, pady=3)
+        ttk.Label(form, text="End date (included):").grid(row=5, column=0, sticky=tk.W, pady=3)
+        ttk.Label(form, text="Dates use the time zone chosen at the top of the window.", foreground="gray").grid(
+            row=5, column=1, columnspan=3, sticky=tk.W, padx=(130, 0)
+        )
         self.end_var = tk.StringVar(value=f"{today:%Y-%m-%d}")
         ttk.Entry(form, textvariable=self.end_var, width=14).grid(row=5, column=1, sticky=tk.W, padx=5)
 
@@ -231,6 +241,32 @@ class DownloadTab(ttk.Frame):
         self.folder_var = tk.StringVar(value=str(saved.get("folder") or Path.home() / "PurpleAir Downloads"))
         ttk.Entry(form, textvariable=self.folder_var).grid(row=9, column=1, sticky=tk.EW, padx=5)
         ttk.Button(form, text="Browse...", command=self.choose_folder).grid(row=9, column=2, sticky=tk.W)
+
+        ttk.Label(form, text="Temperature:").grid(row=10, column=0, sticky=tk.W, pady=3)
+        self.celsius_var = tk.BooleanVar(value=bool(saved.get("celsius", True)))
+        ttk.Checkbutton(
+            form, text="Convert to Celsius, 1 decimal (PurpleAir reports Fahrenheit)", variable=self.celsius_var
+        ).grid(row=10, column=1, columnspan=2, sticky=tk.W, padx=5)
+
+        self.previous: PreviousDownload | None = None
+        ttk.Label(form, text="Previous download:").grid(row=11, column=0, sticky=tk.W, pady=3)
+        self.previous_label = ttk.Label(form, text=NO_PREVIOUS, foreground="gray")
+        self.previous_label.grid(row=11, column=1, sticky=tk.W, padx=5)
+        previous_buttons = ttk.Frame(form)
+        previous_buttons.grid(row=11, column=2, columnspan=2, sticky=tk.W)
+        ttk.Button(previous_buttons, text="Continue from...", command=self.choose_previous).pack(side=tk.LEFT)
+        self.clear_previous_button = ttk.Button(
+            previous_buttons, text="Clear", command=self.clear_previous, state=tk.DISABLED
+        )
+        self.clear_previous_button.pack(side=tk.LEFT, padx=5)
+        self.combine_var = tk.BooleanVar(value=True)
+        self.combine_check = ttk.Checkbutton(
+            form,
+            text="Combine with the previous file into one record (the previous file is not changed)",
+            variable=self.combine_var,
+            state=tk.DISABLED,
+        )
+        self.combine_check.grid(row=12, column=1, columnspan=3, sticky=tk.W, padx=5)
 
         actions = ttk.Frame(self, padding=(10, 0))
         actions.pack(fill=tk.X)
@@ -268,6 +304,67 @@ class DownloadTab(ttk.Frame):
         if folder:
             self.folder_var.set(folder)
 
+    def choose_previous(self) -> None:
+        """Ask for an earlier download to continue from."""
+        path = filedialog.askopenfilename(
+            title="Choose a previous download",
+            initialdir=self.folder_var.get().strip() or None,
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if path:
+            self.use_previous(Path(path))
+
+    def use_previous(self, path: Path) -> None:
+        """Match the form to an earlier download and start where it ends.
+
+        The start date is the day of the last reading, so the new download
+        overlaps the old one and no readings fall between them.
+        """
+        try:
+            previous = read_previous_download(path)
+        except (OSError, ValueError) as error:
+            messagebox.showerror("Cannot read previous download", str(error))
+            return
+        self.previous = previous
+        if previous.sensor_index is not None:
+            self.sensor_var.set(str(previous.sensor_index))
+        if previous.average is not None:
+            self.average_var.set(previous.average)
+        switched = previous.zone is not None and previous.zone != self.app.time_zone_var.get()
+        if previous.zone is not None:
+            self.app.time_zone_var.set(previous.zone)
+        known = [field for field in previous.fields if field in self.field_vars]
+        for field, var in self.field_vars.items():
+            var.set(field in known)
+        self.extra_var.set(", ".join(field for field in previous.fields if field not in self.field_vars))
+        zone = self.app.time_zone
+        self.start_var.set(f"{previous.last_time.tz_convert(zone):%Y-%m-%d}")
+        self.end_var.set(f"{pd.Timestamp.now(tz=zone):%Y-%m-%d}")
+
+        self.previous_label.config(text=path.name, foreground="")
+        self.clear_previous_button.config(state=tk.NORMAL)
+        self.combine_check.config(state=tk.NORMAL)
+        unmatched = [
+            label
+            for label, value in (("sensor index", previous.sensor_index), ("average", previous.average))
+            if value is None
+        ]
+        note = f" Could not tell the {' or '.join(unmatched)}; check the form." if unmatched else ""
+        if switched:
+            note += f" Time zone set to {zone_name(self.app.time_zone)} to match the previous file."
+        self.message.config(
+            text=f"{path.name} ends {previous.last_time.tz_convert(zone):%Y-%m-%d %H:%M} {zone_name(zone)}. "
+            f"The start date overlaps it so the record has no gap. "
+            f"Check the temperature setting matches the previous file.{note}"
+        )
+
+    def clear_previous(self) -> None:
+        """Stop continuing from an earlier download."""
+        self.previous = None
+        self.previous_label.config(text=NO_PREVIOUS, foreground="gray")
+        self.clear_previous_button.config(state=tk.DISABLED)
+        self.combine_check.config(state=tk.DISABLED)
+
     def _selected_fields(self) -> tuple[str, ...]:
         """Combine ticked fields and typed fields, without repeats."""
         ticked = [field for field, var in self.field_vars.items() if var.get()]
@@ -292,9 +389,10 @@ class DownloadTab(ttk.Frame):
         fields = self._selected_fields()
         if not fields:
             raise ValueError("Choose at least one field.")
+        zone = self.app.time_zone
         try:
-            start = pd.Timestamp(self.start_var.get().strip(), tz="UTC")
-            end = pd.Timestamp(self.end_var.get().strip(), tz="UTC") + pd.Timedelta(days=1)
+            start = pd.Timestamp(self.start_var.get().strip(), tz=zone).tz_convert("UTC")
+            end = (pd.Timestamp(self.end_var.get().strip(), tz=zone) + pd.Timedelta(days=1)).tz_convert("UTC")
         except ValueError:
             raise ValueError("Enter dates as YYYY-MM-DD.") from None
         if pd.isna(start) or pd.isna(end):
@@ -311,15 +409,21 @@ class DownloadTab(ttk.Frame):
 
     def _save_choices(self) -> None:
         """Remember the form for next time. The key is kept only if asked."""
-        settings = {
-            "sensor_index": self.sensor_var.get().strip(),
-            "average": self.average_var.get(),
-            "fields": [field for field, var in self.field_vars.items() if var.get()],
-            "extra_fields": self.extra_var.get().strip(),
-            "folder": self.folder_var.get().strip(),
-        }
+        settings = load_settings()
+        settings.update(
+            {
+                "sensor_index": self.sensor_var.get().strip(),
+                "average": self.average_var.get(),
+                "fields": [field for field, var in self.field_vars.items() if var.get()],
+                "extra_fields": self.extra_var.get().strip(),
+                "folder": self.folder_var.get().strip(),
+                "celsius": self.celsius_var.get(),
+            }
+        )
         if self.remember_var.get():
             settings["api_key"] = self.key_var.get().strip()
+        else:
+            settings.pop("api_key", None)
         try:
             save_settings(settings)
         except OSError as error:
@@ -408,12 +512,42 @@ class DownloadTab(ttk.Frame):
             "Large download", f"This needs {count} API requests and will use points from your account. Continue?"
         ):
             return
+        previous = self.previous if self.combine_var.get() else None
+        if previous is not None:
+            if previous.sensor_index not in (None, job.sensor_index):
+                messagebox.showerror(
+                    "Check the form",
+                    f"The previous file is for sensor {previous.sensor_index}, not {job.sensor_index}. "
+                    "Clear the previous download or change the sensor index.",
+                )
+                return
+            if job.start > previous.last_time and not messagebox.askyesno(
+                "Gap in the record",
+                f"The previous file ends {previous.last_time.tz_convert(self.app.time_zone):%Y-%m-%d %H:%M}, "
+                "before the start date, so the combined file will have a gap. Continue?",
+            ):
+                return
         self._save_choices()
         folder = Path(self.folder_var.get().strip())
-        name = f"{job.sensor_index} {job.start:%Y-%m-%d} {job.end - pd.Timedelta(days=1):%Y-%m-%d} {job.average}.csv"
+        zone = self.app.time_zone
+        first = (job.start if previous is None else min(job.start, previous.first_time)).tz_convert(zone)
+        last = (job.end - pd.Timedelta(days=1)).tz_convert(zone)
+        name = f"{job.sensor_index} {first:%Y-%m-%d} {last:%Y-%m-%d} {job.average} {zone_name(zone)}.csv"
+        celsius = self.celsius_var.get()
 
         def work() -> Path:
-            data = download_history(job, lambda done, total: self.events.put(("progress", (done, total))), self.cancel)
+            data = download_history(
+                job,
+                lambda done, total: self.events.put(("progress", (done, total))),
+                self.cancel,
+                time_zone=zone,
+            )
+            if celsius and "temperature" in data.columns:
+                data = convert_temperature(data, "temperature", F_TO_C, decimals=1)
+            if previous is not None:
+                data = combine_downloads(
+                    previous.data, data.rename(columns={TIME_COLUMN: previous.time_column}), previous.time_column, zone
+                )
             folder.mkdir(parents=True, exist_ok=True)
             path = unique_path(folder / name)
             data.to_csv(path, index=False)
@@ -564,7 +698,8 @@ class PlotTab(ttk.Frame):
             messagebox.showwarning("Nothing to plot", "Tick at least one column, or choose a PM2.5 column for AQI.")
             return
 
-        x = date2num(frame[self.time_var.get()].dt.tz_localize(None).to_numpy())
+        zone = self.app.time_zone
+        x = date2num(frame[self.time_var.get()].dt.tz_convert(zone).dt.tz_localize(None).to_numpy())
         self.fig.clear()
         subplots = self.layout_var.get() == "Subplots"
         count = len(series) if subplots else 1
@@ -594,7 +729,7 @@ class PlotTab(ttk.Frame):
             ax.grid(True)
             ax.xaxis.set_major_locator(locator)
             ax.xaxis.set_major_formatter(ConciseDateFormatter(locator))
-        axes[-1].set_xlabel("Time (UTC)")
+        axes[-1].set_xlabel(f"Time ({zone_name(zone)})")
         self.fig.suptitle(self.app.source_name)
         self.canvas.draw()
         self.save_button.config(state=tk.NORMAL)
@@ -659,7 +794,9 @@ class GapsTab(ttk.Frame):
         if self.app.df is None:
             return
         try:
-            self.result = pad_timesteps(self.app.df, self.time_var.get(), INTERVALS[self.interval_var.get()])
+            self.result = pad_timesteps(
+                self.app.df, self.time_var.get(), INTERVALS[self.interval_var.get()], self.app.time_zone
+            )
         except ValueError as error:
             messagebox.showerror("Cannot fill gaps", str(error))
             return
@@ -671,7 +808,10 @@ class GapsTab(ttk.Frame):
         ]
         if self.result.off_interval_rows:
             lines.append(f"Rows between interval steps (kept as is): {self.result.off_interval_rows:,}")
-        lines.extend(f"  {stamp:%Y-%m-%d %H:%M:%S} UTC" for stamp in missing[:MISSING_LISTED])
+        zone = self.app.time_zone
+        lines.extend(
+            f"  {stamp:%Y-%m-%d %H:%M:%S} {zone_name(zone)}" for stamp in missing[:MISSING_LISTED].tz_convert(zone)
+        )
         if len(missing) > MISSING_LISTED:
             lines.append(f"  ... and {len(missing) - MISSING_LISTED:,} more")
         self.summary.delete("1.0", tk.END)
@@ -814,6 +954,13 @@ class App:
         self.file_label = ttk.Label(top, text="No file loaded. Download sensor data below, or open a CSV.")
         self.file_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(top, text="Open CSV...", command=self.choose_file).pack(side=tk.RIGHT)
+        saved_zone = load_settings().get("time_zone")
+        self.time_zone_var = tk.StringVar(value=saved_zone if saved_zone in TIME_ZONES else DEFAULT_TIME_ZONE)
+        ttk.Combobox(
+            top, textvariable=self.time_zone_var, values=list(TIME_ZONES), state="readonly", width=30
+        ).pack(side=tk.RIGHT, padx=10)
+        ttk.Label(top, text="Time zone:").pack(side=tk.RIGHT)
+        self.time_zone_var.trace_add("write", lambda *_: self._save_time_zone())
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -830,6 +977,20 @@ class App:
 
         self.status = ttk.Label(root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
         self.status.pack(fill=tk.X, side=tk.BOTTOM)
+
+    @property
+    def time_zone(self) -> tzinfo:
+        """The zone used for dates, plots and saved files."""
+        return TIME_ZONES[self.time_zone_var.get()]
+
+    def _save_time_zone(self) -> None:
+        """Remember the chosen time zone."""
+        settings = load_settings()
+        settings["time_zone"] = self.time_zone_var.get()
+        try:
+            save_settings(settings)
+        except OSError as error:
+            self.set_status(f"Could not save settings: {error}")
 
     def set_status(self, message: str) -> None:
         """Show a message in the status bar."""

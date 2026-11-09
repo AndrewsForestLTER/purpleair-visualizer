@@ -23,6 +23,7 @@ from purpleair_visualizer.api import (
     request_json,
     split_range,
 )
+from purpleair_visualizer.data import PST
 from purpleair_visualizer.settings import initial_api_key, load_settings, save_settings
 
 EPOCH_2025 = int(pd.Timestamp("2025-01-01", tz="UTC").timestamp())
@@ -94,6 +95,13 @@ def test_results_are_sorted_in_export_format() -> None:
     assert data["time_stamp"].tolist() == ["2025-01-01 00:00:00+00:00", "2025-01-01 01:00:00+00:00"]
     assert list(data.columns) == ["time_stamp", "humidity", "pm2.5_cf_1"]
     assert pd.isna(data["pm2.5_cf_1"].iloc[0])
+
+
+def test_pst_output_and_requested_column_order() -> None:
+    swapped = lambda url, key: {"fields": ["pm2.5_cf_1", "time_stamp", "humidity"], "data": [[2.5, EPOCH_2025, 40]]}
+    data = download_history(job(), request=swapped, sleep=lambda _: None, time_zone=PST)
+    assert list(data.columns) == ["time_stamp", "humidity", "pm2.5_cf_1"]
+    assert data["time_stamp"].iloc[0] == "2024-12-31 16:00:00-08:00"
 
 
 def test_long_range_is_combined_and_spaced() -> None:
