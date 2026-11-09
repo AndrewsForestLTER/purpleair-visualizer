@@ -83,6 +83,17 @@ def test_key_help_opens_site_only_when_asked(
     assert urls == opened
 
 
+@pytest.mark.parametrize(("answer", "opened"), [(True, [gui.MAP_URL]), (False, [])])
+def test_sensor_help_opens_map_only_when_asked(
+    app: gui.App, monkeypatch: pytest.MonkeyPatch, answer: bool, opened: list[str]
+) -> None:
+    urls: list[str] = []
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda title, text: answer)
+    monkeypatch.setattr(gui.webbrowser, "open", urls.append)
+    app.download.show_sensor_help()
+    assert urls == opened
+
+
 def test_key_is_saved_only_when_asked(app: gui.App, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     saved: list[dict] = []
     monkeypatch.setattr(gui, "save_settings", saved.append)

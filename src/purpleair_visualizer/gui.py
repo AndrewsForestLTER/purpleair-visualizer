@@ -57,6 +57,16 @@ POLL_MILLISECONDS = 100
 CONFIRM_REQUESTS = 5
 PREVIEW_ROWS = 100
 DEVELOP_URL = "https://develop.purpleair.com/"
+MAP_URL = "https://map.purpleair.com/"
+SENSOR_INDEX_HELP = (
+    "The sensor index is the number PurpleAir uses to identify a sensor.\n\n"
+    "1. Find the sensor on the PurpleAir map (map.purpleair.com).\n"
+    "2. Click its dot.\n"
+    "3. Look at the page address, which now contains something like select=115739. That number is the index.\n\n"
+    "This is not the Device ID, the MAC-style code printed on the sensor.\n\n"
+    "If a private sensor isn't on the public map, ask whoever registered it, or PurpleAir.\n\n"
+    "Open the PurpleAir map now?"
+)
 API_KEY_HELP = (
     "API keys belong to your PurpleAir account, not to a sensor. One key works for any public sensor.\n\n"
     "1. Sign in at develop.purpleair.com. Sign-in uses an email linked to a Google account.\n"
@@ -180,6 +190,9 @@ class DownloadTab(ttk.Frame):
         ttk.Label(form, text="Sensor index:").grid(row=2, column=0, sticky=tk.W, pady=3)
         self.sensor_var = tk.StringVar(value=str(saved.get("sensor_index", "")))
         ttk.Entry(form, textvariable=self.sensor_var, width=14).grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Button(form, text="How do I find this?", command=self.show_sensor_help).grid(
+            row=2, column=2, sticky=tk.W
+        )
 
         ttk.Label(form, text="Private sensor read key:").grid(row=3, column=0, sticky=tk.W, pady=3)
         self.read_key_var = tk.StringVar()
@@ -243,6 +256,11 @@ class DownloadTab(ttk.Frame):
         """Explain how to get an API key and offer to open PurpleAir's site."""
         if messagebox.askyesno("Getting a PurpleAir API key", API_KEY_HELP):
             webbrowser.open(DEVELOP_URL)
+
+    def show_sensor_help(self) -> None:
+        """Explain how to find a sensor index and offer to open the map."""
+        if messagebox.askyesno("Finding a sensor index", SENSOR_INDEX_HELP):
+            webbrowser.open(MAP_URL)
 
     def choose_folder(self) -> None:
         """Ask where downloads should be saved."""
