@@ -1,18 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- Time zone choice at the top of the window, PST (UTC-8, no daylight saving) by default or UTC, used for download dates, plots, gap filling and saved files.
-- Downloads convert temperature to Celsius with one decimal by default.
-- **Continue from...** in the Download tab matches the form to an earlier download, starts where it ends, and can combine both into one file without repeated times.
-
-### Changed
-
-- Downloaded columns follow the order the fields were chosen in, and file names include the time zone.
-- Downloads are saved in a `PurpleAir Download yyyy-mm-dd` folder inside the chosen folder. Saving a plot, filled data, converted data or bounds suggests that folder and a name built from the sensor index and dates.
-
 ## 2.0.0 - 2026-11-09
 
 First public GitHub release. AQI values differ from 1.0.0 for most concentrations above 9.0 µg/m³ (see below).
@@ -20,6 +7,10 @@ First public GitHub release. AQI values differ from 1.0.0 for most concentration
 ### Added
 
 - Download tab that fetches sensor history from the PurpleAir API, splitting long date ranges automatically, then saves and opens the CSV.
+- **Continue from...** in the Download tab matches the form to an earlier download, starts where it ends, and can combine both into one file without repeated times.
+- Time zone choice at the top of the window, PST (UTC-8, no daylight saving) by default or UTC, used for download dates, plots, gap filling and saved files.
+- Downloads convert temperature to Celsius with one decimal by default.
+- Downloads are saved in a `PurpleAir Download yyyy-mm-dd` folder inside the chosen folder. Saving a plot, filled data, converted data or bounds suggests that folder and a name built from the sensor index and dates.
 
 ### Changed
 

@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "PurpleAir Visualizer"
-abstract: "Desktop tool for exploring, gap-filling and plotting PurpleAir sensor CSV exports, with EPA AQI conversion."
+abstract: "Desktop tool for downloading, exploring, gap-filling and plotting PurpleAir sensor data, with EPA AQI conversion."
 authors:
   - family-names: "Kennedy"
     given-names: "Adam"

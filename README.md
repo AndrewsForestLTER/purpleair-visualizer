@@ -10,14 +10,14 @@ New here? Follow the **[Quickstart](docs/QUICKSTART.md)**. It takes about five m
 
 | Tab | What it does |
 |-----|--------------|
-| **Download** | Fetches any date range for a sensor from the PurpleAir API, saves it as a CSV and opens it. Long ranges are split into several requests automatically. |
+| **Download** | Fetches any date range for a sensor from the PurpleAir API, saves it as a CSV and opens it. Long ranges are split into several requests automatically. **Continue from...** picks up where an earlier download ends and can combine the two into one file. |
 | **Data Preview** | Shows the first 100 rows of the file. |
 | **Plot** | Plots any columns over time on one axis or as stacked subplots, draws PM2.5 as AQI colored by category, and saves a 300 dpi PNG. |
 | **Fill Gaps** | Detects the reporting interval, lists missing timesteps and saves a copy with blank rows added. Existing rows and values are not changed. |
 | **Temperature** | Converts one column between Fahrenheit and Celsius and saves a copy. |
 | **Column Bounds** | Shows the minimum, maximum and range of each column, with optional mean, median and standard deviation. |
 
-The app works with any averaging interval and any set of fields. Your original file is never modified.
+The app works with any averaging interval and any set of fields. Dates, plots and saved times use PST (UTC-8, no daylight saving) or UTC, chosen at the top of the window. Your original file is never modified.
 
 ## Install
 
@@ -106,4 +106,4 @@ Dedicated to the public domain under [CC0 1.0 Universal](LICENSE).
 
 ## Acknowledgments
 
-This material is based upon work supported by the H.J. Andrews Experimental Forest and Long Term Ecological Research (LTER) program under NSF grant LTER8 DEB-2025755. This project is not affiliated with or endorsed by PurpleAir, Inc. The file in `examples/` is synthetic and is not real sensor data. Real hourly data from sensor 115739 at the H.J. Andrews Experimental Forest is archived with [version 1.0.0 on Zenodo](https://doi.org/10.5281/zenodo.15367110).
+This material is based upon work supported by the H.J. Andrews Experimental Forest and Long Term Ecological Research (LTER) program under NSF grant LTER8 DEB-2025755. This project is not affiliated with or endorsed by PurpleAir, Inc. The file in `examples/` is synthetic and is not real sensor data. Real hourly data from sensor 115739 at the H.J. Andrews Experimental Forest, downloaded and processed with this app, is published by the Environmental Data Initiative as [knb-lter-and.12197](https://portal.edirepository.org/nis/mapbrowse?scope=knb-lter-and&identifier=12197). Data from 2022 through early May 2025 are also archived with [version 1.0.0 on Zenodo](https://doi.org/10.5281/zenodo.15367110).
